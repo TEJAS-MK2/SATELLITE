@@ -1,7 +1,7 @@
 const API='https://osirisai.live/api';
 const PROXY='https://api.allorigins.win/raw?url=';
 const CELESTRAK='https://celestrak.org/NORAD/elements/gp.php';
-const REQUEST_TIMEOUT=8000;
+const REQUEST_TIMEOUT=5000;
 const state={satellites:[],earthquakes:[],flights:[],stats:null,selected:null};
 const orbitCache=new Map();
 const layerHandlers=new Map();
