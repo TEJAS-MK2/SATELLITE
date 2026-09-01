@@ -22,7 +22,39 @@ async function drawOrbit(s){clearLayer('selected-orbit');if(typeof satellite==='
 async function focusSatellite(s){const c=coords(s);if(!c)return toast('Satellite has no map coordinates');state.selected=s;map.flyTo({center:c,zoom:4.6,duration:1300});objectDetail(s,'satellite');document.querySelectorAll('.layer').forEach(b=>{if(b.dataset.layer==='satellites')b.classList.add('active')});updateVisibility();if($('orbitMode').checked){toast('Loading orbital elements…');if(await drawOrbit(s))toast('Tracking '+satelliteName(s)+' • orbit path active')}else toast('Tracking '+satelliteName(s))}
 function searchSatellites(q){const query=q.trim().toLowerCase(),box=$('searchResults');if(!query){box.innerHTML='';box.classList.remove('show');return}const matches=state.satellites.filter(s=>(satelliteName(s)+' '+satelliteId(s)).toLowerCase().includes(query)).slice(0,7);box.innerHTML=matches.length?matches.map((s,i)=>'<button class="search-result" data-index="'+i+'"><strong>'+escapeHtml(satelliteName(s))+'</strong><small>NORAD '+escapeHtml(satelliteId(s)||'—')+'</small></button>').join(''):'<div class="search-result"><strong>No matching satellite</strong><small>Try a name or NORAD ID</small></div>';box.classList.add('show');box.querySelectorAll('button').forEach(b=>b.onclick=()=>{focusSatellite(matches[Number(b.dataset.index)]);box.classList.remove('show');$('search').value=''})}
 async function get(path){const r=await fetch(API+path,{cache:'no-store'});if(!r.ok)throw new Error(path+' '+r.status);return r.json()}
-async function load(){ $('apiState').textContent='FETCHING…';try{const [stats,sats,quakes,flights]=await Promise.all([get('/stats'),get('/satellites'),get('/earthquakes'),get('/flights')]);state.stats=stats?.stats||stats;state.satellites=asArray(sats,['satellites','objects']);state.earthquakes=asArray(quakes,['earthquakes','events']);state.flights=asArray(flights,['flights','aircraft']);if(!state.flights.length&&Array.isArray(flights?.commercial_flights))state.flights=flights.commercial_flights;$('satCount').textContent=state.satellites.length||state.stats?.sats||'—';$('quakeCount').textContent=state.earthquakes.length||'—';$('flightCount').textContent=state.flights.length||state.stats?.flights||'—';$('statSats').textContent=state.stats?.sats??state.satellites.length??'—';$('statFlights').textContent=state.stats?.flights??state.flights.length??'—';$('statEvents').textContent=state.stats?.incidents??state.earthquakes.length??'—';$('statWeather').textContent=state.stats?.weather??'—';const totals=['sats','flights','incidents','weather'].map(k=>Number(state.stats?.[k])).filter(Number.isFinite);$('totalCount').textContent=totals.length?totals.reduce((a,b)=>a+b,0).toLocaleString():'—';addPoints('satellites',state.satellites,'#47e7ff',p=>{const s=state.satellites[Number(p._i)];focusSatellite(s||p)});addPoints('earthquakes',state.earthquakes,'#ffc857',p=>objectDetail(p,'earthquake'));addPoints('flights',state.flights,'#5b8cff',p=>objectDetail(p,'flight'));updateVisibility();if(state.selected&&$('orbitMode').checked)drawOrbit(state.selected);$('lastUpdate').textContent=new Date().toISOString().replace('T',' ').slice(0,19)+' UTC';setConnection(true);toast('Live OSIRIS data updated')}catch(e){console.error(e);setConnection(false);toast('OSIRIS API unavailable — retry later')}}
+async function getFeed(path,fallback=[]){try{return await get(path)}catch(e){console.warn('OSIRIS feed failed:',path,e);return fallback}}
+async function load(){
+  $('apiState').textContent='FETCHING…';
+  const results=await Promise.allSettled([getFeed('/stats',null),getFeed('/satellites',[]),getFeed('/earthquakes',[]),getFeed('/flights',[])]);
+  const [statsResult,satsResult,quakeResult,flightResult]=results;
+  const stats=statsResult.status==='fulfilled'?statsResult.value:null;
+  const sats=satsResult.status==='fulfilled'?satsResult.value:[];
+  const quakes=quakeResult.status==='fulfilled'?quakeResult.value:[];
+  const flights=flightResult.status==='fulfilled'?flightResult.value:[];
+  state.stats=stats?.stats||stats||{};
+  state.satellites=asArray(sats,['satellites','objects']);
+  state.earthquakes=asArray(quakes,['earthquakes','events']);
+  state.flights=asArray(flights,['flights','aircraft']);
+  if(!state.flights.length&&Array.isArray(flights?.commercial_flights))state.flights=flights.commercial_flights;
+  $('satCount').textContent=state.satellites.length||state.stats?.sats||'—';
+  $('quakeCount').textContent=state.earthquakes.length||'—';
+  $('flightCount').textContent=state.flights.length||state.stats?.flights||'—';
+  $('statSats').textContent=state.stats?.sats??state.satellites.length??'—';
+  $('statFlights').textContent=state.stats?.flights??state.flights.length??'—';
+  $('statEvents').textContent=state.stats?.incidents??state.earthquakes.length??'—';
+  $('statWeather').textContent=state.stats?.weather??'—';
+  const totals=['sats','flights','incidents','weather'].map(k=>Number(state.stats?.[k])).filter(Number.isFinite);
+  $('totalCount').textContent=totals.length?totals.reduce((a,b)=>a+b,0).toLocaleString():'—';
+  addPoints('satellites',state.satellites,'#47e7ff',p=>{const s=state.satellites[Number(p._i)];focusSatellite(s||p)});
+  addPoints('earthquakes',state.earthquakes,'#ffc857',p=>objectDetail(p,'earthquake'));
+  addPoints('flights',state.flights,'#5b8cff',p=>objectDetail(p,'flight'));
+  updateVisibility();
+  if(state.selected&&$('orbitMode').checked)drawOrbit(state.selected);
+  $('lastUpdate').textContent=new Date().toISOString().replace('T',' ').slice(0,19)+' UTC';
+  const ok=results.some(r=>r.status==='fulfilled'&&r.value!==null&&r.value!==undefined&&(!Array.isArray(r.value)||r.value.length>0));
+  setConnection(ok);
+  if(ok)toast('Live data updated'+(results.filter(r=>r.status==='rejected').length?' • some feeds unavailable':''));else toast('All live feeds unavailable — retry later');
+}
 function updateVisibility(){for(const id of ['satellites','earthquakes','flights'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',document.querySelector(`[data-layer="${id}"]`).classList.contains('active')?'visible':'none');if(map.getLayer('selected-orbit'))map.setLayoutProperty('selected-orbit','visibility',$('orbitMode').checked?'visible':'none')}
 function resetView(){map.flyTo({center:[0,20],zoom:1.35,bearing:0,pitch:0,duration:1000});clearLayer('selected-orbit');state.selected=null;toast('Global view restored')}
 document.querySelectorAll('.layer').forEach(b=>b.addEventListener('click',()=>{b.classList.toggle('active');updateVisibility()}));$('refreshBtn').onclick=load;$('resetBtn').onclick=resetView;$('issBtn').onclick=()=>{const s=state.satellites.find(x=>/\bISS\b|ZARYA|25544/i.test(satelliteName(x)+' '+satelliteId(x)));s?focusSatellite(s):toast('ISS is not in the current feed')};$('orbitMode').onchange=async()=>{if(state.selected&&$('orbitMode').checked)await drawOrbit(state.selected);updateVisibility()};$('autoRefresh').onchange=()=>toast($('autoRefresh').checked?'Auto refresh enabled':'Auto refresh paused');$('nightMode').onchange=()=>{$('nightMode').checked=true;toast('Globe projection is always enabled')};$('search').addEventListener('input',e=>searchSatellites(e.target.value));document.addEventListener('click',e=>{if(!e.target.closest('.searchbox'))$('searchResults').classList.remove('show')});document.addEventListener('keydown',e=>{if(e.key==='/'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();$('search').focus()}if(e.key.toLowerCase()==='f'){if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.()}if(e.key.toLowerCase()==='r'&&document.activeElement.tagName!=='INPUT')resetView()});setInterval(()=>{$('clock').textContent=new Date().toISOString().slice(11,19)+' UTC'},1000);setInterval(()=>{if($('autoRefresh').checked)load()},60000);map.on('load',load);
