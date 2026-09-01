@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#05070b" />
+  <meta name="description" content="SATELLITE — a real-time orbital intelligence dashboard powered by the OSIRIS Live API." />
+  <title>SATELLITE — Orbital Intelligence</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◈</span><div><strong>SATELLITE</strong><small>ORBITAL INTELLIGENCE</small></div></div>
+      <div class="status"><span class="pulse"></span><span id="connection">CONNECTING</span><span class="divider"></span><span id="clock">--:--:-- UTC</span></div>
+    </header>
+
+    <aside class="sidebar left-panel">
+      <section class="panel-section">
+        <div class="section-title">LIVE FEEDS</div>
+        <button class="layer active" data-layer="satellites"><span class="dot cyan"></span> SATELLITES <b id="satCount">—</b></button>
+        <button class="layer active" data-layer="earthquakes"><span class="dot amber"></span> EARTHQUAKES <b id="quakeCount">—</b></button>
+        <button class="layer" data-layer="flights"><span class="dot blue"></span> AIRCRAFT <b id="flightCount">—</b></button>
+      </section>
+      <section class="panel-section">
+        <div class="section-title">DISPLAY</div>
+        <label class="toggle-row"><span>Night globe</span><input id="nightMode" type="checkbox" checked><i></i></label>
+        <label class="toggle-row"><span>Auto refresh</span><input id="autoRefresh" type="checkbox" checked><i></i></label>
+      </section>
+      <section class="panel-section source-note">
+        <div class="section-title">SOURCE</div>
+        <p>Live public data via the <a href="https://osirisai.live" target="_blank" rel="noreferrer">OSIRIS Intelligence</a> API.</p>
+      </section>
+    </aside>
+
+    <main id="map"></main>
+
+    <aside class="sidebar right-panel">
+      <section class="hud-card">
+        <div class="card-kicker">SYSTEM STATUS</div>
+        <div class="big-number" id="totalCount">—</div>
+        <div class="muted">TRACKED ENTITIES</div>
+        <div class="stats-grid">
+          <div><span>SATS</span><strong id="statSats">—</strong></div>
+          <div><span>FLIGHTS</span><strong id="statFlights">—</strong></div>
+          <div><span>EVENTS</span><strong id="statEvents">—</strong></div>
+          <div><span>WEATHER</span><strong id="statWeather">—</strong></div>
+        </div>
+      </section>
+      <section class="hud-card detail" id="detailCard">
+        <div class="card-kicker">SELECTED OBJECT</div>
+        <h2>Nothing selected</h2>
+        <p>Click a satellite or event on the globe to inspect live telemetry.</p>
+      </section>
+      <section class="hud-card footer-card">
+        <div class="muted">LAST UPDATE</div>
+        <strong id="lastUpdate">—</strong>
+        <button id="refreshBtn">↻ REFRESH DATA</button>
+      </section>
+    </aside>
+
+    <div class="bottom-bar"><span>OSIRIS API</span><span>•</span><span id="apiState">WAITING FOR DATA</span><span>•</span><span>MAPLIBRE WEBGL</span></div>
+    <div id="toast" role="status"></div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
