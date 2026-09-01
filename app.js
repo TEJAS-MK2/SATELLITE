@@ -1,4 +1,5 @@
 const API='https://osirisai.live/api';
+const PROXY='https://api.allorigins.win/raw?url=';
 const CELESTRAK='https://celestrak.org/NORAD/elements/gp.php';
 const state={satellites:[],earthquakes:[],flights:[],stats:null,selected:null};
 const orbitCache=new Map();
@@ -6,7 +7,7 @@ const $=id=>document.getElementById(id);
 const map=new maplibregl.Map({container:'map',style:{version:8,sources:{carto:{type:'raster',tiles:['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png','https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap © CARTO'}},layers:[{id:'background',type:'background',paint:{'background-color':'#05070b'}},{id:'carto',type:'raster',source:'carto',paint:{'raster-opacity':.82}}],projection:{type:'globe'}},center:[0,20],zoom:1.35,dragRotate:true,renderWorldCopies:false});
 map.addControl(new maplibregl.NavigationControl({showCompass:true}),'bottom-right');
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('show'),2600)}
-function setConnection(ok){$('connection').textContent=ok?'LIVE':'OFFLINE';$('apiState').textContent=ok?'LIVE DATA':'API UNAVAILABLE'}
+function setConnection(ok,partial=false){$('connection').textContent=ok?'LIVE':'OFFLINE';$('apiState').textContent=ok?(partial?'PARTIAL LIVE DATA':'LIVE DATA'):'API UNAVAILABLE'}
 function asArray(data,keys=[]){if(Array.isArray(data))return data;for(const k of keys)if(Array.isArray(data?.[k]))return data[k];return []}
 function coords(o){const lat=Number(o.latitude??o.lat??o.sat_lat??o.latitude_deg),lon=Number(o.longitude??o.lon??o.lng??o.sat_lon??o.longitude_deg);return Number.isFinite(lat)&&Number.isFinite(lon)?[lon,lat]:null}
 function clearLayer(id){if(map.getLayer(id))map.removeLayer(id);if(map.getSource(id))map.removeSource(id)}
@@ -21,7 +22,7 @@ async function getOrbitalElements(s){const direct=findTle(s);if(direct)return {k
 async function drawOrbit(s){clearLayer('selected-orbit');if(typeof satellite==='undefined'){toast('Orbit engine failed to load');return false}const elements=await getOrbitalElements(s);if(!elements){toast('No current orbital elements found');return false}try{const satrec=elements.kind==='tle'?satellite.twoline2satrec(elements.data[0],elements.data[1]):satellite.json2satrec(elements.data),now=new Date(),segments=[],current=[];for(let m=-90;m<=90;m+=2){const d=new Date(now.getTime()+m*60000),pv=satellite.propagate(satrec,d);if(!pv?.position)continue;const gmst=satellite.gstime(d),g=satellite.eciToGeodetic(pv.position,gmst),lon=satellite.degreesLong(g.longitude),lat=satellite.degreesLat(g.latitude),point=[lon,lat];if(current.length&&Math.abs(point[0]-current[current.length-1][0])>180){if(current.length>1)segments.push({type:'Feature',geometry:{type:'LineString',coordinates:current.splice(0)}});current.push(point)}else current.push(point)}if(current.length>1)segments.push({type:'Feature',geometry:{type:'LineString',coordinates:current}});if(!segments.length)throw new Error('No propagated orbit points');map.addSource('selected-orbit',{type:'geojson',data:{type:'FeatureCollection',features:segments}});map.addLayer({id:'selected-orbit',type:'line',source:'selected-orbit',paint:{'line-color':'#47e7ff','line-width':2,'line-opacity':.82,'line-dasharray':[2,2]}});return true}catch(e){console.error('Orbit propagation failed',e);toast('Orbit calculation failed');return false}}
 async function focusSatellite(s){const c=coords(s);if(!c)return toast('Satellite has no map coordinates');state.selected=s;map.flyTo({center:c,zoom:4.6,duration:1300});objectDetail(s,'satellite');document.querySelectorAll('.layer').forEach(b=>{if(b.dataset.layer==='satellites')b.classList.add('active')});updateVisibility();if($('orbitMode').checked){toast('Loading orbital elements…');if(await drawOrbit(s))toast('Tracking '+satelliteName(s)+' • orbit path active')}else toast('Tracking '+satelliteName(s))}
 function searchSatellites(q){const query=q.trim().toLowerCase(),box=$('searchResults');if(!query){box.innerHTML='';box.classList.remove('show');return}const matches=state.satellites.filter(s=>(satelliteName(s)+' '+satelliteId(s)).toLowerCase().includes(query)).slice(0,7);box.innerHTML=matches.length?matches.map((s,i)=>'<button class="search-result" data-index="'+i+'"><strong>'+escapeHtml(satelliteName(s))+'</strong><small>NORAD '+escapeHtml(satelliteId(s)||'—')+'</small></button>').join(''):'<div class="search-result"><strong>No matching satellite</strong><small>Try a name or NORAD ID</small></div>';box.classList.add('show');box.querySelectorAll('button').forEach(b=>b.onclick=()=>{focusSatellite(matches[Number(b.dataset.index)]);box.classList.remove('show');$('search').value=''})}
-async function get(path){const r=await fetch(API+path,{cache:'no-store'});if(!r.ok)throw new Error(path+' '+r.status);return r.json()}
+async function get(path){const url=API+path;try{const r=await fetch(url,{cache:'no-store',mode:'cors'});if(r.ok)return await r.json();throw new Error('Direct '+r.status)}catch(directError){console.warn('Direct OSIRIS request failed; using CORS fallback',path,directError);const proxyUrl=PROXY+encodeURIComponent(url);const r=await fetch(proxyUrl,{cache:'no-store'});if(!r.ok)throw new Error('OSIRIS proxy '+r.status);return r.json()}}
 async function getFeed(path,fallback=[]){try{return await get(path)}catch(e){console.warn('OSIRIS feed failed:',path,e);return fallback}}
 async function load(){
   $('apiState').textContent='FETCHING…';
@@ -51,9 +52,11 @@ async function load(){
   updateVisibility();
   if(state.selected&&$('orbitMode').checked)drawOrbit(state.selected);
   $('lastUpdate').textContent=new Date().toISOString().replace('T',' ').slice(0,19)+' UTC';
-  const ok=results.some(r=>r.status==='fulfilled'&&r.value!==null&&r.value!==undefined&&(!Array.isArray(r.value)||r.value.length>0));
-  setConnection(ok);
-  if(ok)toast('Live data updated'+(results.filter(r=>r.status==='rejected').length?' • some feeds unavailable':''));else toast('All live feeds unavailable — retry later');
+  const successful=results.filter(r=>r.status==='fulfilled'&&r.value!==null&&r.value!==undefined);
+  const ok=successful.length>0;
+  const partial=successful.length>0&&successful.length<results.length;
+  setConnection(ok,partial);
+  if(ok)toast('Live OSIRIS data updated'+(partial?' • some feeds unavailable':''));else toast('OSIRIS API unavailable — retry later');
 }
 function updateVisibility(){for(const id of ['satellites','earthquakes','flights'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',document.querySelector(`[data-layer="${id}"]`).classList.contains('active')?'visible':'none');if(map.getLayer('selected-orbit'))map.setLayoutProperty('selected-orbit','visibility',$('orbitMode').checked?'visible':'none')}
 function resetView(){map.flyTo({center:[0,20],zoom:1.35,bearing:0,pitch:0,duration:1000});clearLayer('selected-orbit');state.selected=null;toast('Global view restored')}
