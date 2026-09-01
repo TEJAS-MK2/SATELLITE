@@ -28,6 +28,8 @@ No API key is hard-coded or required by this project. OSIRIS documents these rea
 - Object telemetry panel
 - Automatic data refresh
 - Responsive command-center interface
+- Direct API retry with timed proxy fallback
+- Refresh-safe MapLibre data updates
 
 ## Run locally
 
